@@ -9,86 +9,9 @@ from django.conf import settings
 from rest_framework import status
 
 from apps.api.permissions import ACTION_PREFIX, GrafanaAPIPermission
+from apps.grafana_plugin.helpers.client import exceptions, types
 
 logger = logging.getLogger(__name__)
-
-
-class GrafanaUser(typing.TypedDict):
-    orgId: int
-    userId: int
-    email: str
-    name: str
-    avatarUrl: str
-    login: str
-    role: str
-    lastSeenAt: str
-    lastSeenAtAge: str
-
-
-class GrafanaUserWithPermissions(GrafanaUser):
-    permissions: typing.List[GrafanaAPIPermission]
-
-
-GrafanaUsersWithPermissions = typing.List[GrafanaUserWithPermissions]
-UserPermissionsDict = typing.Dict[str, typing.List[GrafanaAPIPermission]]
-
-
-class GCOMInstanceInfoConfigFeatureToggles(typing.TypedDict):
-    accessControlOnCall: str
-
-
-class GCOMInstanceInfoConfig(typing.TypedDict):
-    feature_toggles: GCOMInstanceInfoConfigFeatureToggles
-
-
-class GCOMInstanceInfo(typing.TypedDict):
-    id: int
-    orgId: int
-    slug: str
-    orgSlug: str
-    orgName: str
-    url: str
-    status: str
-    clusterSlug: str
-    config: GCOMInstanceInfoConfig | None
-
-
-class ApiClientResponseCallStatus(typing.TypedDict):
-    url: str
-    connected: bool
-    status_code: int
-    message: str
-
-
-# TODO: come back and make the typing.Dict strongly typed once we switch to Python 3.12
-# which has better support for generics
-_APIClientResponse = typing.Optional[typing.Dict | typing.List]
-APIClientResponse = typing.Tuple[_APIClientResponse, ApiClientResponseCallStatus]
-
-
-# can't define this using class syntax because one of the keys contains a dash
-# https://docs.python.org/3/library/typing.html#typing.TypedDict:~:text=The%20functional%20syntax%20should%20also%20be%20used%20when%20any%20of%20the%20keys%20are%20not%20valid%20identifiers%2C%20for%20example%20because%20they%20are%20keywords%20or%20contain%20hyphens.%20Example%3A
-APIRequestHeaders = typing.TypedDict(
-    "APIRequestHeaders",
-    {
-        "User-Agent": str,
-        "Authorization": str,
-    },
-)
-
-
-class HttpMethod(typing.Protocol):
-    """
-    TODO: can probably replace this with something from the requests library?
-    https://github.com/psf/requests/blob/main/requests/api.py#L14
-    """
-
-    @property
-    def __name__(self) -> str:
-        ...
-
-    def __call__(self, *args, **kwargs) -> requests.Response:
-        ...
 
 
 class APIClient:
@@ -96,20 +19,20 @@ class APIClient:
         self.api_url = api_url
         self.api_token = api_token
 
-    def api_head(self, endpoint: str, body: typing.Optional[typing.Dict] = None, **kwargs) -> APIClientResponse:
+    def api_head(self, endpoint: str, body: typing.Optional[typing.Dict] = None, **kwargs) -> types.APIClientResponse:
         return self.call_api(endpoint, requests.head, body, **kwargs)
 
-    def api_get(self, endpoint: str, **kwargs) -> APIClientResponse:
+    def api_get(self, endpoint: str, **kwargs) -> types.APIClientResponse:
         return self.call_api(endpoint, requests.get, **kwargs)
 
-    def api_post(self, endpoint: str, body: typing.Optional[typing.Dict] = None, **kwargs) -> APIClientResponse:
+    def api_post(self, endpoint: str, body: typing.Optional[typing.Dict] = None, **kwargs) -> types.APIClientResponse:
         return self.call_api(endpoint, requests.post, body, **kwargs)
 
     def call_api(
-        self, endpoint: str, http_method: HttpMethod, body: typing.Optional[typing.Dict] = None, **kwargs
-    ) -> APIClientResponse:
+        self, endpoint: str, http_method: types.HttpMethod, body: typing.Optional[typing.Dict] = None, **kwargs
+    ) -> types.APIClientResponse:
         request_start = time.perf_counter()
-        call_status: ApiClientResponseCallStatus = {
+        call_status: types.ApiClientResponseCallStatus = {
             "url": urljoin(self.api_url, endpoint),
             "connected": False,
             "status_code": status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -151,7 +74,7 @@ class APIClient:
         return None, call_status
 
     @property
-    def request_headers(self) -> APIRequestHeaders:
+    def request_headers(self) -> types.APIRequestHeaders:
         return {"User-Agent": settings.GRAFANA_COM_USER_AGENT, "Authorization": f"Bearer {self.api_token}"}
 
 
@@ -161,10 +84,10 @@ class GrafanaAPIClient(APIClient):
     def __init__(self, api_url: str, api_token: str) -> None:
         super().__init__(api_url, api_token)
 
-    def check_token(self) -> APIClientResponse:
+    def check_token(self) -> types.APIClientResponse:
         return self.api_head("api/org")
 
-    def get_users_permissions(self, rbac_is_enabled_for_org: bool) -> UserPermissionsDict:
+    def get_users_permissions(self, rbac_is_enabled_for_org: bool) -> types.UserPermissionsDict:
         """
         It is possible that this endpoint may not be available for certain Grafana orgs.
         Ex: for Grafana Cloud orgs whom have pinned their Grafana version to an earlier version
@@ -192,7 +115,7 @@ class GrafanaAPIClient(APIClient):
 
         data: typing.Dict[str, typing.Dict[str, typing.List[str]]] = response
 
-        all_users_permissions: UserPermissionsDict = {}
+        all_users_permissions: types.UserPermissionsDict = {}
         for user_id, user_permissions in data.items():
             all_users_permissions[user_id] = [GrafanaAPIPermission(action=key) for key, _ in user_permissions.items()]
 
@@ -202,7 +125,7 @@ class GrafanaAPIClient(APIClient):
         _, resp_status = self.api_head(self.USER_PERMISSION_ENDPOINT)
         return resp_status["connected"]
 
-    def get_users(self, rbac_is_enabled_for_org: bool, **kwargs) -> GrafanaUsersWithPermissions:
+    def get_users(self, rbac_is_enabled_for_org: bool, **kwargs) -> types.GrafanaUsersWithPermissions:
         users_response, _ = self.api_get("api/org/users", **kwargs)
 
         if not users_response:
@@ -210,7 +133,7 @@ class GrafanaAPIClient(APIClient):
         elif isinstance(users_response, dict):
             return []
 
-        users: GrafanaUsersWithPermissions = users_response
+        users: types.GrafanaUsersWithPermissions = users_response
 
         user_permissions = self.get_users_permissions(rbac_is_enabled_for_org)
 
@@ -219,32 +142,32 @@ class GrafanaAPIClient(APIClient):
             user["permissions"] = user_permissions.get(str(user["userId"]), [])
         return users
 
-    def get_teams(self, **kwargs) -> APIClientResponse:
+    def get_teams(self, **kwargs) -> types.APIClientResponse:
         return self.api_get("api/teams/search?perpage=1000000", **kwargs)
 
-    def get_team_members(self, team_id: int) -> APIClientResponse:
+    def get_team_members(self, team_id: int) -> types.APIClientResponse:
         return self.api_get(f"api/teams/{team_id}/members")
 
-    def get_datasources(self) -> APIClientResponse:
+    def get_datasources(self) -> types.APIClientResponse:
         return self.api_get("api/datasources")
 
-    def get_datasource_by_id(self, datasource_id) -> APIClientResponse:
+    def get_datasource_by_id(self, datasource_id) -> types.APIClientResponse:
         # This endpoint is deprecated for Grafana version >= 9. Use get_datasource instead
         return self.api_get(f"api/datasources/{datasource_id}")
 
-    def get_datasource(self, datasource_uid) -> APIClientResponse:
+    def get_datasource(self, datasource_uid) -> types.APIClientResponse:
         return self.api_get(f"api/datasources/uid/{datasource_uid}")
 
-    def get_alertmanager_status_with_config(self, recipient) -> APIClientResponse:
+    def get_alertmanager_status_with_config(self, recipient) -> types.APIClientResponse:
         return self.api_get(f"api/alertmanager/{recipient}/api/v2/status")
 
-    def get_alerting_config(self, recipient: str) -> APIClientResponse:
+    def get_alerting_config(self, recipient: str) -> types.APIClientResponse:
         return self.api_get(f"api/alertmanager/{recipient}/config/api/v1/alerts")
 
-    def update_alerting_config(self, recipient, config) -> APIClientResponse:
+    def update_alerting_config(self, recipient, config) -> types.APIClientResponse:
         return self.api_post(f"api/alertmanager/{recipient}/config/api/v1/alerts", config)
 
-    def get_grafana_plugin_settings(self, recipient: str) -> APIClientResponse:
+    def get_grafana_plugin_settings(self, recipient: str) -> types.APIClientResponse:
         return self.api_get(f"api/plugins/{recipient}/settings")
 
 
@@ -259,7 +182,7 @@ class GcomAPIClient(APIClient):
 
     def get_instance_info(
         self, stack_id: str, include_config_query_param: bool = False
-    ) -> typing.Optional[GCOMInstanceInfo]:
+    ) -> typing.Optional[types.GCOMInstanceInfo]:
         """
         NOTE: in order to use ?config=true, an "Admin" GCOM token must be used to make the API call
         """
@@ -270,7 +193,7 @@ class GcomAPIClient(APIClient):
         data, _ = self.api_get(url)
         return data
 
-    def _feature_toggle_is_enabled(self, instance_info: GCOMInstanceInfo, feature_name: str) -> bool:
+    def _feature_toggle_is_enabled(self, instance_info: types.GCOMInstanceInfo, feature_name: str) -> bool:
         """
         there are two ways that feature toggles can be enabled, this method takes into account both
         https://grafana.com/docs/grafana/latest/setup-grafana/configure-grafana/#enable
@@ -306,10 +229,16 @@ class GcomAPIClient(APIClient):
     def is_stack_deleted(self, stack_id: str) -> bool:
         url = f"instances?includeDeleted=true&id={stack_id}"
         instance_infos, _ = self.api_get(url)
+
+        if not isinstance(instance_infos, dict):
+            raise exceptions.UnexpectedResponseJSONPayloadType(
+                f"Unexpected JSON payload type received. Expected dict, got {type(instance_infos)}"
+            )
+
         return instance_infos["items"] and instance_infos["items"][0].get("status") == self.STACK_STATUS_DELETED
 
-    def post_active_users(self, body) -> APIClientResponse:
+    def post_active_users(self, body) -> types.APIClientResponse:
         return self.api_post("app-active-users", body)
 
-    def get_stack_regions(self) -> APIClientResponse:
+    def get_stack_regions(self) -> types.APIClientResponse:
         return self.api_get("stack-regions")
