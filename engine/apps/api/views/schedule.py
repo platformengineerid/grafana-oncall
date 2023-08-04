@@ -4,7 +4,7 @@ import operator
 
 import pytz
 from django.core.exceptions import ObjectDoesNotExist
-from django.db.models import Count, OuterRef, Subquery
+from django.db.models import Count, OuterRef, QuerySet, Subquery
 from django.db.utils import IntegrityError
 from django.urls import reverse
 from django.utils import dateparse, timezone
@@ -21,7 +21,7 @@ from rest_framework.views import Response
 from rest_framework.viewsets import ModelViewSet
 
 from apps.alerts.models import EscalationChain, EscalationPolicy
-from apps.api.permissions import RBACPermission
+from apps.api.permissions import AuthenticatedRequest, RBACPermission
 from apps.api.serializers.schedule_base import ScheduleFastSerializer
 from apps.api.serializers.schedule_polymorphic import (
     PolymorphicScheduleCreateSerializer,
@@ -66,13 +66,15 @@ class ScheduleFilter(ByTeamModelFieldFilterMixin, ModelFieldFilterMixin, filters
 
 class ScheduleView(
     TeamFilteringMixin,
-    PublicPrimaryKeyMixin,
+    PublicPrimaryKeyMixin["OnCallSchedule"],
     ShortSerializerMixin,
     CreateSerializerMixin,
     UpdateSerializerMixin,
     ModelViewSet,
     mixins.ListModelMixin,
 ):
+    request: AuthenticatedRequest
+
     authentication_classes = (
         MobileAppAuthTokenAuthentication,
         PluginAuthentication,
@@ -146,9 +148,9 @@ class ScheduleView(
         context.update({"oncall_users": self.oncall_users})
         return context
 
-    def _annotate_queryset(self, queryset):
+    def _annotate_queryset(self, queryset: QuerySet[OnCallSchedule]) -> QuerySet[OnCallSchedule]:
         """Annotate queryset with additional schedule metadata."""
-        organization = self.request.auth.organization
+        organization = self.request.user.organization
         slack_channels = SlackChannel.objects.filter(
             slack_team_identity=organization.slack_team_identity,
             slack_id=OuterRef("channel"),
@@ -238,10 +240,10 @@ class ScheduleView(
             return self.get_object_from_organization()
         return super().get_object()
 
-    def get_object_from_organization(self, ignore_filtering_by_available_teams=False):
+    def get_object_from_organization(self, ignore_filtering_by_available_teams=False) -> OnCallSchedule:
         # use this method to get the object from the whole organization instead of the current team
         pk = self.kwargs["pk"]
-        organization = self.request.auth.organization
+        organization = self.request.user.organization
         queryset = organization.oncall_schedules.filter(
             public_primary_key=pk,
         )

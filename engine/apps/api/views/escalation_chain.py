@@ -1,3 +1,5 @@
+import typing
+
 from django.db.models import Count, Q
 from django_filters import rest_framework as filters
 from emoji import emojize
@@ -27,13 +29,24 @@ from common.api_helpers.mixins import (
 from common.insight_log import EntityEvent, write_resource_insight_log
 
 
+class DetailChannelFilterData(typing.TypedDict):
+    display_name: str
+    id: str
+
+
+class Detail(typing.TypedDict):
+    id: str
+    display_name: str
+    channel_filters: typing.List[DetailChannelFilterData]
+
+
 class EscalationChainFilter(ByTeamModelFieldFilterMixin, ModelFieldFilterMixin, filters.FilterSet):
     team = TeamModelMultipleChoiceFilter()
 
 
 class EscalationChainViewSet(
     TeamFilteringMixin,
-    PublicPrimaryKeyMixin,
+    PublicPrimaryKeyMixin[EscalationChain],
     FilterSerializerMixin,
     ListSerializerMixin,
     viewsets.ModelViewSet,
@@ -156,7 +169,7 @@ class EscalationChainViewSet(
             "alert_receive_channel__public_primary_key",
             "alert_receive_channel__verbal_name",
         )
-        data = {}
+        data: typing.Dict[str, Detail] = {}
         for channel_filter in channel_filters:
             channel_filter_data = {
                 "display_name": "Default Route" if channel_filter["is_default"] else channel_filter["filtering_term"],

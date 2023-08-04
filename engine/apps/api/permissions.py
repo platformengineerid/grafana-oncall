@@ -23,8 +23,8 @@ ViewSetOrAPIView = typing.Union[ViewSet, APIView]
 
 class AuthenticatedRequest(Request):
     """
-    Use this for typing, instead of rest_framework.request.Request, when you KNOW that the user is authenticated.
-    ex. In the RBACPermission class below, we know that the user is authenticated because this is handled by the
+    Use this for typing, instead of `rest_framework.request.Request`, when you KNOW that the user is authenticated.
+    ex. In the `RBACPermission` class below, we know that the user is authenticated because this is handled by the
     `authentication_classes` attribute on views.
 
     https://github.com/typeddjango/django-stubs#how-can-i-create-a-httprequest-thats-guaranteed-to-have-an-authenticated-user

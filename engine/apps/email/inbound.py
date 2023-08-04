@@ -1,5 +1,5 @@
 import logging
-from typing import Optional, TypedDict
+import typing
 
 from anymail.exceptions import AnymailWebhookValidationFailure
 from anymail.inbound import AnymailInboundMessage
@@ -31,7 +31,7 @@ INBOUND_EMAIL_ESP_OPTIONS = {
 }
 
 
-class EmailAlertPayload(TypedDict):
+class EmailAlertPayload(typing.TypedDict):
     subject: str
     message: str
     sender: str
@@ -75,7 +75,7 @@ class InboundEmailWebhookView(AlertChannelDefiningMixin, APIView):
 
         return Response("OK", status=status.HTTP_200_OK)
 
-    def get_integration_token_from_request(self, request) -> Optional[str]:
+    def get_integration_token_from_request(self, request) -> typing.Optional[str]:
         messages = self.get_messages_from_esp_request(request)
         if not messages:
             return None
@@ -83,7 +83,7 @@ class InboundEmailWebhookView(AlertChannelDefiningMixin, APIView):
         # First try envelope_recipient field.
         # According to AnymailInboundMessage it's provided not by all ESPs.
         if message.envelope_recipient:
-            token, domain = message.envelope_recipient.split("@")
+            token, domain = typing.cast(str, message.envelope_recipient).split("@")
             if domain == live_settings.INBOUND_EMAIL_DOMAIN:
                 return token
         else:

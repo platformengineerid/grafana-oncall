@@ -40,6 +40,37 @@ disable_error_code = [
     "union-attr",
 ]
 
+###################################
+#
+# The following set of rules are in place to gradually move us towards "strict" mode.
+# From the mypy docs (https://mypy.readthedocs.io/en/stable/existing_code.html#introduce-stricter-options):
+#
+# An excellent goal to aim for is to have your codebase pass when run against mypy --strict. This basically ensures
+# that you will never have a type related error without an explicit circumvention somewhere (such as a # type: ignore
+# comment).
+#
+###################################
+# The following config is equivalent to --strict (as of mypy 1.0):
+strict = true
+warn_redundant_casts = true
+warn_unused_configs = true
+warn_unused_ignores = true
+strict_equality = true
+strict_concatenate = true
+check_untyped_defs = true
+disallow_subclassing_any = true
+disallow_untyped_decorators = true
+no_implicit_reexport = true
+warn_return_any = true
+
+# the following rules are currently disabled as they're generating > 1500 errors
+# the best approach here is to probably enable them django app by app, to make the work more managable
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+disallow_untyped_calls = false
+disallow_any_generics = false
+###################################
+
 # mypy per-module options
 [[tool.mypy.overrides]]
 module = [
