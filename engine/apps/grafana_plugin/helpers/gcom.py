@@ -8,6 +8,7 @@ from apps.auth_token.exceptions import InvalidToken
 from apps.auth_token.models import PluginAuthToken
 from apps.grafana_plugin.helpers import GcomAPIClient
 from apps.user_management.models import Organization
+from apps.user_management.sync import sync_organization
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -63,6 +64,7 @@ def check_gcom_permission(token_string: str, context) -> GcomToken:
                 gcom_token=token_string,
                 defaults={"gcom_token_org_last_time_synced": timezone.now()},
             )
+            sync_organization(organization)
     else:
         organization.stack_slug = instance_info["slug"]
         organization.org_slug = instance_info["orgSlug"]
